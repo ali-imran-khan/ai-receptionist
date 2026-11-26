@@ -1,0 +1,278 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Panel - NeoFlow Automations</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .container { max-width: 1200px; margin: 24px auto; padding: 16px; }
+    h1 { margin-top: 0; color: #60a5fa; }
+    .section { background: #111827; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 8px; font-weight: 500; }
+    input, textarea, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { background: #2563eb; border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin-right: 8px; }
+    button:hover { background: #1d4ed8; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    .knowledge-item { background: #0b1220; padding: 16px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #2563eb; }
+    .knowledge-item h3 { margin: 0 0 8px 0; color: #60a5fa; }
+    .knowledge-item p { margin: 0; color: #94a3b8; }
+    .actions { margin-top: 12px; }
+    .status { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
+    .status.success { background: #065f46; color: #a7f3d0; }
+    .status.error { background: #7f1d1d; color: #fca5a5; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Admin Panel - Company Knowledge</h1>
+    
+    <div id="status"></div>
+    
+    <div class="grid">
+      <div class="section">
+        <h2>Add New Knowledge Item</h2>
+        <form id="addForm">
+          <div class="form-group">
+            <label for="title">Title</label>
+            <input type="text" id="title" placeholder="e.g., Company Overview" required>
+          </div>
+          <div class="form-group">
+            <label for="text">Content</label>
+            <textarea id="text" placeholder="Enter the content that will be used to answer customer questions..." required></textarea>
+          </div>
+          <button type="submit">Add Knowledge Item</button>
+        </form>
+      </div>
+      
+      <div class="section">
+        <h2>Quick Actions</h2>
+        <button onclick="loadKnowledge()">Refresh Knowledge</button>
+        <button onclick="testReceptionist()">Test Receptionist</button>
+        <button class="danger" onclick="clearAllKnowledge()">Clear All</button>
+        <div style="margin-top: 16px;">
+          <label for="testQuery">Test Query:</label>
+          <input type="text" id="testQuery" placeholder="What services do you offer?" value="What services do you offer?">
+          <button onclick="testQuery()" style="margin-top: 8px;">Test Response</button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Current Knowledge Base</h2>
+      <div id="knowledgeList">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    let knowledgeItems = [];
+    
+    function showStatus(message, type = 'success') {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = `status ${type}`;
+      setTimeout(() => status.textContent = '', 3000);
+    }
+    
+    async function loadKnowledge() {
+      try {
+        const response = await fetch('/api/knowledge');
+        const data = await response.json();
+        knowledgeItems = data.items || [];
+        renderKnowledge();
+        showStatus(`Loaded ${knowledgeItems.length} knowledge items`);
+      } catch (error) {
+        showStatus('Failed to load knowledge', 'error');
+      }
+    }
+    
+    function renderKnowledge() {
+      const container = document.getElementById('knowledgeList');
+      if (knowledgeItems.length === 0) {
+        container.innerHTML = '<p>No knowledge items found. Add some to get started!</p>';
+        return;
+      }
+      
+      container.innerHTML = knowledgeItems.map((item, index) => `
+        <div class="knowledge-item">
+          <h3>${item.title}</h3>
+          <p>${item.text}</p>
+          <div class="actions">
+            <button onclick="editItem(${index})">Edit</button>
+            <button class="danger" onclick="deleteItem(${index})">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    async function addKnowledge() {
+      const title = document.getElementById('title').value.trim();
+      const text = document.getElementById('text').value.trim();
+      
+      if (!title || !text) {
+        showStatus('Please fill in both title and content', 'error');
+        return;
+      }
+      
+      try {
+        const newItem = { title, text };
+        const updatedItems = [...knowledgeItems, newItem];
+        
+        const response = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedItems)
+        });
+        
+        if (response.ok) {
+          knowledgeItems = updatedItems;
+          renderKnowledge();
+          document.getElementById('addForm').reset();
+          showStatus('Knowledge item added successfully');
+        } else {
+          showStatus('Failed to add knowledge item', 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to add knowledge item', 'error');
+      }
+    }
+    
+    async function deleteItem(index) {
+      if (!confirm('Are you sure you want to delete this knowledge item?')) return;
+      
+      try {
+        const updatedItems = knowledgeItems.filter((_, i) => i !== index);
+        
+        const response = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedItems)
+        });
+        
+        if (response.ok) {
+          knowledgeItems = updatedItems;
+          renderKnowledge();
+          showStatus('Knowledge item deleted');
+        } else {
+          showStatus('Failed to delete knowledge item', 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to delete knowledge item', 'error');
+      }
+    }
+    
+    function editItem(index) {
+      const item = knowledgeItems[index];
+      document.getElementById('title').value = item.title;
+      document.getElementById('text').value = item.text;
+      
+      // Update form to edit mode
+      const form = document.getElementById('addForm');
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        updateItem(index);
+      };
+      form.querySelector('button').textContent = 'Update Item';
+    }
+    
+    async function updateItem(index) {
+      const title = document.getElementById('title').value.trim();
+      const text = document.getElementById('text').value.trim();
+      
+      if (!title || !text) {
+        showStatus('Please fill in both title and content', 'error');
+        return;
+      }
+      
+      try {
+        const updatedItems = [...knowledgeItems];
+        updatedItems[index] = { title, text };
+        
+        const response = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedItems)
+        });
+        
+        if (response.ok) {
+          knowledgeItems = updatedItems;
+          renderKnowledge();
+          document.getElementById('addForm').reset();
+          document.getElementById('addForm').onsubmit = (e) => {
+            e.preventDefault();
+            addKnowledge();
+          };
+          document.getElementById('addForm').querySelector('button').textContent = 'Add Knowledge Item';
+          showStatus('Knowledge item updated');
+        } else {
+          showStatus('Failed to update knowledge item', 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to update knowledge item', 'error');
+      }
+    }
+    
+    async function clearAllKnowledge() {
+      if (!confirm('Are you sure you want to clear ALL knowledge items? This cannot be undone.')) return;
+      
+      try {
+        const response = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([])
+        });
+        
+        if (response.ok) {
+          knowledgeItems = [];
+          renderKnowledge();
+          showStatus('All knowledge items cleared');
+        } else {
+          showStatus('Failed to clear knowledge items', 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to clear knowledge items', 'error');
+      }
+    }
+    
+    async function testQuery() {
+      const query = document.getElementById('testQuery').value.trim();
+      if (!query) return;
+      
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: query, context: {} })
+        });
+        
+        const data = await response.json();
+        if (data.intent && data.intent.reply) {
+          showStatus(`Response: "${data.intent.reply}"`, 'success');
+        } else {
+          showStatus('No response received', 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to test query', 'error');
+      }
+    }
+    
+    function testReceptionist() {
+      window.open('/', '_blank');
+    }
+    
+    // Initialize
+    document.getElementById('addForm').onsubmit = (e) => {
+      e.preventDefault();
+      addKnowledge();
+    };
+    
+    loadKnowledge();
+  </script>
+</body>
+</html>
+
